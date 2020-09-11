@@ -3,3 +3,7 @@ deployment = "deployment.toml"
 [[contracts]]
 name = "ckb-dynamic-loading-secp256k1"
 template_type = "Rust"
+
+[[contracts]]
+name = "ckb-dynamic-loading-rsa"
+template_type = "Rust"

@@ -9,4 +9,5 @@ edition = "2018"
 ckb-tool = { git = "https://github.com/jjyr/ckb-tool.git", tag = "v0.1.1" }
 ckb-testtool = { git = "https://github.com/jjyr/ckb-tool.git", tag = "v0.1.1" }
 ckb-system-scripts = "0.5"
-
+rsa = "0.3.0"
+rand = "0.7.3"
