@@ -10,7 +10,11 @@ use ckb_tool::ckb_hash::{blake2b_256, new_blake2b};
 use std::fs;
 use rsa::{PublicKey, RSAPrivateKey, RSAPublicKey, PaddingScheme, PublicKeyParts, Hash};
 use rand::rngs::OsRng;
-
+use base64;
+use openssl::sign::{Signer, Verifier};
+use openssl::rsa::Rsa;
+use openssl::pkey::{PKey, Public, Private};
+use openssl::hash::MessageDigest;
 
 const MAX_CYCLES: u64 = 10_000_000;
 
@@ -21,11 +25,14 @@ fn blake160(data: &[u8]) -> [u8; 20] {
     buf
 }
 
-fn sign_tx(tx: TransactionView, key: &RSAPrivateKey) -> TransactionView {
+fn sign_tx(tx: TransactionView, key: &RSAPrivateKey, pub_key: &RSAPublicKey,
+           key2: &PKey<Private>, pub_key2: &PKey<Public>) -> TransactionView {
     const SIGNATURE_SIZE: usize = 128;
 
     let witnesses_len = tx.witnesses().len();
     let tx_hash = tx.hash();
+    println!("tx_hash= {:02X?}", tx_hash.as_slice());
+
     let mut signed_witnesses: Vec<packed::Bytes> = Vec::new();
     let mut blake2b = new_blake2b();
     let mut message = [0u8; 32];
@@ -52,12 +59,27 @@ fn sign_tx(tx: TransactionView, key: &RSAPrivateKey) -> TransactionView {
         blake2b.update(&witness.raw_data());
     });
     blake2b.finalize(&mut message);
+    println!("message = {:02X?}", message);
 
+    // rsa
     let sig = key.sign(PaddingScheme::new_pkcs1v15_sign(Some(Hash::SHA2_256)), &message).expect("sign");
+    println!("signature size = {}, content = {:02X?}", sig.len(), sig);
+    pub_key.verify(PaddingScheme::new_pkcs1v15_sign(Some(Hash::SHA2_256)), &message, &sig.as_slice()).expect("verify");
+
+    // openssl
+    let mut signer = Signer::new(MessageDigest::sha256(), &key2).unwrap();
+    signer.update(&message).unwrap();
+    let sig2 = signer.sign_to_vec().unwrap();
+
+    let mut verifier = Verifier::new(MessageDigest::sha256(), &key2).unwrap();
+    verifier.update(&message).unwrap();
+    assert!(verifier.verify(&sig2).unwrap());
+
+
     signed_witnesses.push(
         witness
         .as_builder()
-        .lock(Some(Bytes::from(sig)).pack())
+        .lock(Some(Bytes::from(sig2)).pack())
         .build()
         .as_bytes()
         .pack(),
@@ -71,7 +93,7 @@ fn sign_tx(tx: TransactionView, key: &RSAPrivateKey) -> TransactionView {
 }
 
 
-fn serialize_pub_key(pub_key : RSAPublicKey) -> Vec<u8> {
+fn serialize_pub_key(pub_key : &RSAPublicKey) -> Vec<u8> {
     let mut result : Vec<u8> = vec![];
 
     let mut e = pub_key.e().to_bytes_le();
@@ -91,13 +113,66 @@ fn serialize_pub_key(pub_key : RSAPublicKey) -> Vec<u8> {
 }
 
 
+fn generate_rsa_key() -> (RSAPrivateKey, RSAPublicKey) {
+    // openssl genrsa -out private_key.pem 1024
+    let file_content = r#"
+-----BEGIN RSA PRIVATE KEY-----
+MIICXAIBAAKBgQC19jgtjVSBP3UA15/ZyVpFuxK9m5rEYEe4LBmayKIO8c9AlExl
+f2pbUXYigteNY75Nx0exKYFoZccwm2zqod2BAfO0kyUxuQqA3wvV7wlN2lvmBCzG
+M5d7Q+uQ8byhSrYHnaNHMsT7GQB/o6ihQMIBu+wYzz/A8kNgSP4x/+GEbQIDAQAB
+AoGBAKxssvNHV2paTW8M5GaljKtDCBEwIEoxygRVlbW8pQRwUyoo3PPY91mtKbqu
+Lb/HYo+lZOQWJpBc0ZHX1i/ITnHVoqHIsSvrE3p1/ywucB0DX+a+l5KzekZ7fuq0
+Yh3wD+Xmjic75m1UeSxGkMxiwbtsb7Ubf4TxEgOA562rmAVpAkEA4HoyEUSngpao
+sIKcIYSZGESVxigmJnluYWf6yH9VaGD5NM+dr9SN4At8F++H2jUnxRKzVV/+M0ir
+688m4fXBTwJBAM+DnrTQ4Y3ONMLuKZiBSXENVkzIXF4oJEq6G0vSXSnx1XiZKxTz
+X4Qz28zVbGQ9wtzKuzbC4OCSXBpTAOnGl4MCQHqnKe43hhObgGaZpvfFfOU+rFuO
+mnHRTdeZOfUNZjxXKDOL8YweZrrxa4ekkKVQ//71XdmbTsj0v0Nkd8llP48CQCQK
+IegZVvL/2x33qvW3jn+550ESkygvJI5t4Au9Dz0XqRF22Iqc8fvN3eCnOFn4d/1M
+oFMUaWXXRXO08rWnLe0CQHH38XWaJUkw+Ozoxsq651qWkhm7k6O4Elb4nO3gkiby
+fTEpXpRFyDvyXVYcyXuL6w8FMV5ixSJ13IXIUv2i45Y=
+-----END RSA PRIVATE KEY-----"#;
+    let der_encoded = file_content
+        .lines()
+        .filter(|line| !line.starts_with("-"))
+        .fold(String::new(), |mut data, line| {
+            data.push_str(&line);
+            data
+        });
+    let der_bytes = base64::decode(&der_encoded).expect("failed to decode base64 content");
+    let private_key = RSAPrivateKey::from_pkcs1(&der_bytes).expect("failed to parse key");
+    let public_key = RSAPublicKey::from(&private_key);
+    (private_key, public_key)
+}
+
+fn generate_openssl_key() -> (PKey<Private>, PKey<Public>) {
+    // openssl genrsa -out tiny_key.pem 1024
+    let file_content = r#"
+-----BEGIN RSA PRIVATE KEY-----
+MIICXAIBAAKBgQC19jgtjVSBP3UA15/ZyVpFuxK9m5rEYEe4LBmayKIO8c9AlExl
+f2pbUXYigteNY75Nx0exKYFoZccwm2zqod2BAfO0kyUxuQqA3wvV7wlN2lvmBCzG
+M5d7Q+uQ8byhSrYHnaNHMsT7GQB/o6ihQMIBu+wYzz/A8kNgSP4x/+GEbQIDAQAB
+AoGBAKxssvNHV2paTW8M5GaljKtDCBEwIEoxygRVlbW8pQRwUyoo3PPY91mtKbqu
+Lb/HYo+lZOQWJpBc0ZHX1i/ITnHVoqHIsSvrE3p1/ywucB0DX+a+l5KzekZ7fuq0
+Yh3wD+Xmjic75m1UeSxGkMxiwbtsb7Ubf4TxEgOA562rmAVpAkEA4HoyEUSngpao
+sIKcIYSZGESVxigmJnluYWf6yH9VaGD5NM+dr9SN4At8F++H2jUnxRKzVV/+M0ir
+688m4fXBTwJBAM+DnrTQ4Y3ONMLuKZiBSXENVkzIXF4oJEq6G0vSXSnx1XiZKxTz
+X4Qz28zVbGQ9wtzKuzbC4OCSXBpTAOnGl4MCQHqnKe43hhObgGaZpvfFfOU+rFuO
+mnHRTdeZOfUNZjxXKDOL8YweZrrxa4ekkKVQ//71XdmbTsj0v0Nkd8llP48CQCQK
+IegZVvL/2x33qvW3jn+550ESkygvJI5t4Au9Dz0XqRF22Iqc8fvN3eCnOFn4d/1M
+oFMUaWXXRXO08rWnLe0CQHH38XWaJUkw+Ozoxsq651qWkhm7k6O4Elb4nO3gkiby
+fTEpXpRFyDvyXVYcyXuL6w8FMV5ixSJ13IXIUv2i45Y=
+-----END RSA PRIVATE KEY-----"#;
+    let rsa = Rsa::private_key_from_pem(file_content.as_bytes()).unwrap();
+    let private_key = PKey::from_rsa(rsa).unwrap();
+    let public_key_pem: Vec<u8> = private_key.public_key_to_pem().unwrap();
+    let public_key = PKey::public_key_from_pem(&public_key_pem).unwrap();
+    (private_key, public_key)
+}
+
 #[test]
 fn test_rsa() {
-    let mut rng = OsRng;
-    let bits = 1024;
-    let priv_key = RSAPrivateKey::new(&mut rng, bits).expect("failed to generate a key");
-    let pub_key = RSAPublicKey::from(&priv_key);
-
+    let (priv_key, pub_key) = generate_rsa_key();
+    let (priv_key2, pub_key2) = generate_openssl_key();
 
     // deploy contract
     let mut context = Context::default();
@@ -110,7 +185,8 @@ fn test_rsa() {
         .out_point(rsa_out_point)
         .build();
 
-    let pub_key_binary = serialize_pub_key(pub_key);
+    let pub_key_binary = serialize_pub_key(&pub_key);
+    println!("public key size = {}, content = {:02X?}", pub_key_binary.len(), pub_key_binary);
     // prepare scripts
     let lock_script = context
         .build_script(&out_point,pub_key_binary.into())
@@ -152,7 +228,7 @@ fn test_rsa() {
     let tx = context.complete_tx(tx);
 
     // sign
-    let tx = sign_tx(tx, &priv_key);
+    let tx = sign_tx(tx, &priv_key, &pub_key, &priv_key2, &pub_key2);
 
     // run
     let cycles = context

@@ -6,7 +6,9 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ckb-std = "0.6.0"
+ckb-std = "0.6.2"
+# must use 0.6.2 and above, due to
+# https://github.com/nervosnetwork/ckb-std/commit/0f4de4c0343d2f6aff0e94433e2f2908138c50f9
 
 [build-dependencies]
 blake2b-rs = "0.1.5"
