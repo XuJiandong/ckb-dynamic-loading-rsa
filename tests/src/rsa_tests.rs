@@ -2,11 +2,8 @@
 #![allow(dead_code)]
 
 use super::*;
-use base64;
-use ckb_system_scripts::BUNDLED_CELL;
 use ckb_testtool::context::Context;
-use ckb_tool::ckb_crypto::secp::{Generator, Privkey};
-use ckb_tool::ckb_hash::{blake2b_256, new_blake2b};
+use ckb_tool::ckb_hash::{new_blake2b};
 use ckb_tool::ckb_types::{
     bytes::Bytes,
     core::{TransactionBuilder, TransactionView},
@@ -17,18 +14,9 @@ use openssl::hash::MessageDigest;
 use openssl::pkey::{PKey, Private, Public};
 use openssl::rsa::Rsa;
 use openssl::sign::{Signer, Verifier};
-use rand::rngs::OsRng;
-use rsa::{Hash, PaddingScheme, PublicKey, PublicKeyParts, RSAPrivateKey, RSAPublicKey};
 use std::fs;
 
 const MAX_CYCLES: u64 = 10_000_000;
-
-fn blake160(data: &[u8]) -> [u8; 20] {
-    let mut buf = [0u8; 20];
-    let hash = blake2b_256(data);
-    buf.clone_from_slice(&hash[..20]);
-    buf
-}
 
 fn sign_tx(
     tx: TransactionView,
@@ -39,7 +27,6 @@ fn sign_tx(
 
     let witnesses_len = tx.witnesses().len();
     let tx_hash = tx.hash();
-    println!("tx_hash= {:02X?}", tx_hash.as_slice());
 
     let mut signed_witnesses: Vec<packed::Bytes> = Vec::new();
     let mut blake2b = new_blake2b();
@@ -67,7 +54,6 @@ fn sign_tx(
         blake2b.update(&witness.raw_data());
     });
     blake2b.finalize(&mut message);
-    println!("message = {:02X?}", message);
 
     // openssl
     let mut signer = Signer::new(MessageDigest::sha256(), &private_key).unwrap();
