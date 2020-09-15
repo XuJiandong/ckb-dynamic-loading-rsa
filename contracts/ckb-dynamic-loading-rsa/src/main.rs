@@ -4,8 +4,8 @@
 #![feature(alloc_error_handler)]
 #![feature(panic_info_message)]
 
-mod rsa;
 mod code_hashes;
+mod rsa;
 
 // Import from `core` instead of from `std` since we are in no-std mode
 use core::result::Result;
@@ -16,11 +16,7 @@ use core::result::Result;
 
 // Import CKB syscalls and structures
 // https://nervosnetwork.github.io/ckb-std/riscv64imac-unknown-none-elf/doc/ckb_std/index.html
-use ckb_std::{
-    debug, default_alloc, entry,
-    error::SysError,
-    dynamic_loading::CKBDLContext,
-};
+use ckb_std::{debug, default_alloc, dynamic_loading::CKBDLContext, entry, error::SysError};
 
 use crate::rsa::RsaLib;
 

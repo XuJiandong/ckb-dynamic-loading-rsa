@@ -1,5 +1,5 @@
-use ckb_std::dynamic_loading::{CKBDLContext, Symbol};
 use crate::code_hashes::CODE_HASH_RSA;
+use ckb_std::dynamic_loading::{CKBDLContext, Symbol};
 
 type ValidateRsaSighashAll = unsafe extern "C" fn() -> i32;
 
@@ -16,11 +16,8 @@ impl RsaLib {
         let lib = context.load(&CODE_HASH_RSA).expect("load RSA");
 
         // find symbols
-        let validate_rsa_sighash_all: Symbol<ValidateRsaSighashAll> = unsafe {
-            lib
-            .get(VALIDATE_RSA_SIGHASH_ALL)
-            .expect("load function")
-        };
+        let validate_rsa_sighash_all: Symbol<ValidateRsaSighashAll> =
+            unsafe { lib.get(VALIDATE_RSA_SIGHASH_ALL).expect("load function") };
         RsaLib {
             validate_rsa_sighash_all,
         }
@@ -28,7 +25,7 @@ impl RsaLib {
 
     pub fn validate_rsa_sighash_all(&self) -> Result<(), i32> {
         let f = &self.validate_rsa_sighash_all;
-        let error_code = unsafe {f()};
+        let error_code = unsafe { f() };
         if error_code == 0 {
             Ok(())
         } else {
