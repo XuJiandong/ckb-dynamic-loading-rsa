@@ -16,7 +16,13 @@ use core::result::Result;
 
 // Import CKB syscalls and structures
 // https://nervosnetwork.github.io/ckb-std/riscv64imac-unknown-none-elf/doc/ckb_std/index.html
-use ckb_std::{debug, default_alloc, dynamic_loading::CKBDLContext, entry, error::SysError};
+use ckb_std::{
+    ckb_types::{bytes::Bytes, prelude::*},
+    debug, default_alloc, entry,
+    error::SysError,
+    high_level::load_script,
+    dynamic_loading::CKBDLContext,
+};
 
 use crate::rsa::RsaLib;
 
@@ -57,11 +63,21 @@ impl From<SysError> for Error {
 }
 
 fn main() -> Result<(), Error> {
+    let script = load_script()?;
+    let args: Bytes = script.args().unpack();
+
+    if args.len() != 20 {
+        return Err(Error::Encoding);
+    }
+
+    let mut pubkey_hash = [0u8; 20];
+    pubkey_hash.copy_from_slice(&args);
+
     // create a DL context with 128K buffer size
     let mut context = CKBDLContext::<[u8; 128 * 1024]>::new();
 
     let lib = RsaLib::load(&mut context);
-    lib.validate_rsa_sighash_all().map_err(|err_code| {
+    lib.validate_rsa_sighash_all(&pubkey_hash).map_err(|err_code| {
         debug!("Rsa error {}", err_code);
         Error::Rsa
     })?;

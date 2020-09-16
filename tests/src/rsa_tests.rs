@@ -3,7 +3,7 @@
 
 use super::*;
 use ckb_testtool::context::Context;
-use ckb_tool::ckb_hash::{new_blake2b};
+use ckb_tool::ckb_hash::{new_blake2b, blake2b_256};
 use ckb_tool::ckb_types::{
     bytes::Bytes,
     core::{TransactionBuilder, TransactionView},
@@ -18,12 +18,21 @@ use std::fs;
 
 const MAX_CYCLES: u64 = 10_000_000;
 
+
+fn blake160(data: &[u8]) -> [u8; 20] {
+    let mut buf = [0u8; 20];
+    let hash = blake2b_256(data);
+    buf.clone_from_slice(&hash[..20]);
+    buf
+}
+
 fn sign_tx(
     tx: TransactionView,
     private_key: &PKey<Private>,
     public_key: &PKey<Public>,
 ) -> TransactionView {
-    const SIGNATURE_SIZE: usize = 128;
+    // see "signature (in witness) memory layout"
+    const SIGNATURE_SIZE: usize = 264;
 
     let witnesses_len = tx.witnesses().len();
     let tx_hash = tx.hash();
@@ -58,17 +67,21 @@ fn sign_tx(
     // openssl
     let mut signer = Signer::new(MessageDigest::sha256(), &private_key).unwrap();
     signer.update(&message).unwrap();
-    let signature = signer.sign_to_vec().unwrap();
+    let rsa_signature = signer.sign_to_vec().unwrap();
+
+    // see "signature (in witness) memory layout"
+    let (mut rsa_info, _) = calculate_pub_key_hash(public_key);
+    rsa_info.extend_from_slice(&rsa_signature);
 
     // verify it locally
     let mut verifier = Verifier::new(MessageDigest::sha256(), &public_key).unwrap();
     verifier.update(&message).unwrap();
-    assert!(verifier.verify(&signature).unwrap());
+    assert!(verifier.verify(&rsa_signature).unwrap());
 
     signed_witnesses.push(
         witness
             .as_builder()
-            .lock(Some(Bytes::from(signature)).pack())
+            .lock(Some(Bytes::from(rsa_info)).pack())
             .build()
             .as_bytes()
             .pack(),
@@ -81,8 +94,26 @@ fn sign_tx(
         .build()
 }
 
-fn serialize_pub_key(public_key: &PKey<Public>) -> Vec<u8> {
+/** signature (in witness) memory layout
+ * This structure contains the following information:
+ * 1) RSA Key Size
+ * 2) RSA Public Key
+ * 3) RSA Signature data
+ *
++---------+----------+---------------------------------+------------------------------------+
+| key_size|   E      |  N (key_size/8 bytes)           | RSA Signature (key_size/8 bytes)   |
++--------------------+---------------------------------+------------------------------------+
+The key_size, N both occupy 4 bytes, in little endian (uint32_t).
+So the total length in byte is: 4 + 4 + key_size/8 + key_size/8.
+
+The public key hash is calculated : blake2b(key_size + E + N), dropping RSA signature part.
+*/
+fn calculate_pub_key_hash(public_key: &PKey<Public>) -> (Vec<u8>, Vec<u8>) {
     let mut result: Vec<u8> = vec![];
+
+    let key_size = public_key.bits() as u32;
+    let key_size_buff = key_size.to_le_bytes();
+    result.extend_from_slice(&key_size_buff);
 
     let rsa_public_key = public_key.rsa().unwrap();
 
@@ -100,7 +131,9 @@ fn serialize_pub_key(public_key: &PKey<Public>) -> Vec<u8> {
 
     result.append(&mut e);
     result.append(&mut n);
-    result
+
+    let h = blake160(&result).into();
+    (result, h)
 }
 
 fn generate_openssl_key() -> (PKey<Private>, PKey<Public>) {
@@ -143,11 +176,10 @@ fn test_rsa() {
     let rsa_out_point = context.deploy_cell(rsa_bin);
     let rsa_dep = CellDep::new_builder().out_point(rsa_out_point).build();
 
-    let pub_key_binary = serialize_pub_key(&public_key);
-    // println!("public key size = {}, content = {:02X?}", pub_key_binary.len(), pub_key_binary);
+    let (_public_key_binary, public_key_hash) = calculate_pub_key_hash(&public_key);
     // prepare scripts
     let lock_script = context
-        .build_script(&out_point, pub_key_binary.into())
+        .build_script(&out_point, public_key_hash.into())
         .expect("script");
     let lock_script_dep = CellDep::new_builder().out_point(out_point).build();
 
@@ -190,7 +222,6 @@ fn test_rsa() {
 
     // run
     let cycles = context
-        .verify_tx(&tx, MAX_CYCLES)
-        .expect("pass verification");
+        .verify_tx(&tx, MAX_CYCLES).expect("pass verification");
     println!("consume cycles: {}", cycles);
 }

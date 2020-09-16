@@ -1,7 +1,7 @@
 use crate::code_hashes::CODE_HASH_RSA;
 use ckb_std::dynamic_loading::{CKBDLContext, Symbol};
 
-type ValidateRsaSighashAll = unsafe extern "C" fn() -> i32;
+type ValidateRsaSighashAll = unsafe extern "C" fn(pub_key_hash: *const u8) -> i32;
 
 /// Symbol name
 const VALIDATE_RSA_SIGHASH_ALL: &[u8; 24] = b"validate_rsa_sighash_all";
@@ -23,9 +23,9 @@ impl RsaLib {
         }
     }
 
-    pub fn validate_rsa_sighash_all(&self) -> Result<(), i32> {
+    pub fn validate_rsa_sighash_all(&self, public_key_hash: &[u8; 20]) -> Result<(), i32> {
         let f = &self.validate_rsa_sighash_all;
-        let error_code = unsafe { f() };
+        let error_code = unsafe { f(public_key_hash.as_ptr()) };
         if error_code == 0 {
             Ok(())
         } else {
