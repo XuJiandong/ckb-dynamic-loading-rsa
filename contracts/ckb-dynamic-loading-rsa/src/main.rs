@@ -9,6 +9,7 @@ mod rsa;
 
 // Import from `core` instead of from `std` since we are in no-std mode
 use core::result::Result;
+use alloc::vec::Vec;
 
 // Import heap related library from `alloc`
 // https://doc.rust-lang.org/alloc/index.html
@@ -69,6 +70,7 @@ fn main() -> Result<(), Error> {
     if args.len() != 20 {
         return Err(Error::Encoding);
     }
+    let args: Vec<u8> = args.into();
 
     let mut pubkey_hash = [0u8; 20];
     pubkey_hash.copy_from_slice(&args);
@@ -81,6 +83,10 @@ fn main() -> Result<(), Error> {
         debug!("Rsa error {}", err_code);
         Error::Rsa
     })?;
+
+    if !pubkey_hash.eq(&args.as_slice()) {
+        debug!("Rsa public key hashes are different: {:?} {:?}", pubkey_hash, args);
+    }
 
     Ok(())
 }
