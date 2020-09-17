@@ -16,7 +16,7 @@ use openssl::rsa::Rsa;
 use openssl::sign::{Signer, Verifier};
 use std::fs;
 
-const MAX_CYCLES: u64 = 10_000_000;
+const MAX_CYCLES: u64 = 40_000_000;
 
 
 fn blake160(data: &[u8]) -> [u8; 20] {
@@ -32,7 +32,7 @@ fn sign_tx(
     public_key: &PKey<Public>,
 ) -> TransactionView {
     // see "signature (in witness) memory layout"
-    const SIGNATURE_SIZE: usize = 264;
+    let signature_size = (private_key.bits()/8*2+8) as usize;
 
     let witnesses_len = tx.witnesses().len();
     let tx_hash = tx.hash();
@@ -45,7 +45,7 @@ fn sign_tx(
     let witness = WitnessArgs::default();
     let zero_lock: Bytes = {
         let mut buf = Vec::new();
-        buf.resize(SIGNATURE_SIZE, 0);
+        buf.resize(signature_size, 0);
         buf.into()
     };
     let witness_for_digest = witness
@@ -161,9 +161,47 @@ fTEpXpRFyDvyXVYcyXuL6w8FMV5ixSJ13IXIUv2i45Y=
     (private_key, public_key)
 }
 
+fn generate_random_key(bits: u32) -> (PKey<Private>, PKey<Public>) {
+    assert!(bits == 1024 || bits == 2048 || bits == 4096);
+    let rsa = Rsa::generate(bits).unwrap();
+    let private_key = PKey::from_rsa(rsa).unwrap();
+
+    let public_key_pem: Vec<u8> = private_key.public_key_to_pem().unwrap();
+    let public_key = PKey::public_key_from_pem(&public_key_pem).unwrap();
+    (private_key, public_key)
+}
+
 #[test]
-fn test_rsa() {
+fn test_rsa_fixed_1024() {
     let (private_key, public_key) = generate_openssl_key();
+    test_rsa(private_key, public_key);
+}
+
+#[test]
+fn test_rsa_random_1024() {
+    let (private_key, public_key) = generate_random_key(1024);
+    test_rsa(private_key, public_key);
+}
+
+#[test]
+fn test_rsa_random_2048() {
+    let (private_key, public_key) = generate_random_key(2048);
+    test_rsa(private_key, public_key);
+}
+
+#[test]
+fn test_rsa_random_4096() {
+    let (private_key, public_key) = generate_random_key(4096);
+    test_rsa(private_key, public_key);
+}
+
+
+fn test_rsa(private_key: PKey<Private> , public_key: PKey<Public> ) {
+    let mut result = [0; 3];
+    let mut blake2b = new_blake2b();
+    blake2b.update(&[0; 32]);
+    blake2b.finalize(&mut result);
+
 
     // deploy contract
     let mut context = Context::default();
