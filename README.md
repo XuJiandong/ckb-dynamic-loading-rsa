@@ -9,17 +9,26 @@ A contract that do RSA verification via dynamic loading.
 
 ### Build contracts:
 
-#### 1. init submodules & prepare
+#### 0. install tools
+
+``` sh
+make install-tools
+```
+
+Only do it once. Check it: 
+
+```
+rustup show
+```
+and make sure the active toolchain includes same content as in file 'rust-toolchain'.
+
+
+#### 1. init submodules
 
 ``` sh
 git submodule init && git submodule update -r
 ```
 
-Install tool:
-``` sh
-make install-tools
-```
-Only do it once.
 
 #### 2. build the shared binary `rsa_sighash_all`
 

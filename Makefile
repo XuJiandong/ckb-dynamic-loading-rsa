@@ -5,7 +5,9 @@ test: contract fix
 
 install-tools:
 	cargo install --git https://github.com/xxuejie/ckb-binary-patcher.git
+	rustup toolchain install nightly-2020-09-28
 
+	
 contract:
 	cd contracts/ckb-dynamic-loading-rsa && cargo build
 
