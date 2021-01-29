@@ -5,7 +5,6 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 #[cfg(test)]
-mod tests;
 mod rsa_tests;
 
 const TEST_ENV_VAR: &str = "CAPSULE_TEST_ENV";
@@ -57,6 +56,7 @@ impl Loader {
     pub fn load_binary(&self, name: &str) -> Bytes {
         let mut path = self.0.clone();
         path.push(name);
+        println!("path = {:?}", path);
         fs::read(path).expect("binary").into()
     }
 }

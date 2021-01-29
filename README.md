@@ -9,11 +9,17 @@ A contract that do RSA verification via dynamic loading.
 
 ### Build contracts:
 
-#### 1. init submodules
+#### 1. init submodules & prepare
 
 ``` sh
 git submodule init && git submodule update -r
 ```
+
+Install tool:
+``` sh
+make install-tools
+```
+Only do it once.
 
 #### 2. build the shared binary `rsa_sighash_all`
 
@@ -23,14 +29,14 @@ cd ckb-miscellaneous-scripts && make install-tools && make all-via-docker
 
 #### 3. build contract
 
-``` sh
-capsule build
+```sh
+make contract
 ```
 
 ### Run tests:
 
 ``` sh
-capsule test
+make test
 ```
 
 ### Implementation Details
